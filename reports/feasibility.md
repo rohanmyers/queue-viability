@@ -33,29 +33,29 @@ in study phase is not the same as a project that failed.
   - Class balance: 20.8% positive
 
 ## Regional coverage
-region
-PJM          8099
-West         7647
-Southeast    3893
-MISO         3282
-ERCOT        2582
-CAISO        2534
-SPP          2432
-NYISO        1816
-ISO-NE       1281
+
+- PJM: 8099
+- West: 7647
+- Southeast: 3893
+- MISO: 3282
+- ERCOT: 2582
+- CAISO: 2534
+- SPP: 2432
+- NYISO: 1816
+- ISO-NE: 1281
 
 ## Fuel type coverage (top 10 after Unicode cleanup)
-type_clean
-Solar            13270
-Battery           5354
-Wind              4926
-Solar+Battery     3569
-Gas               2945
-Other             1448
-Hydro              456
-Coal               303
-Offshore Wind      230
-Geothermal         158
+
+- Solar: 13270
+- Battery: 5354
+- Wind: 4926
+- Solar+Battery: 3569
+- Gas: 2945
+- Other: 1448
+- Hydro: 456
+- Coal: 303
+- Offshore Wind: 230
+- Geothermal: 158
 
 ## Baseline completion rate to beat
 - Overall (full trainable set): 16.6%
