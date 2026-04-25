@@ -4,7 +4,7 @@
   "metadata": {
     "colab": {
       "provenance": [],
-      "authorship_tag": "ABX9TyNi5O3EosXVY203s6rn1QVp",
+      "authorship_tag": "ABX9TyM+BUDyw+rjbO7uFRSvVeSl",
       "include_colab_link": true
     },
     "kernelspec": {
@@ -28,12 +28,812 @@
     },
     {
       "cell_type": "code",
-      "execution_count": null,
+      "execution_count": 1,
       "metadata": {
-        "id": "5QZQEZ9aHkmT"
+        "id": "5QZQEZ9aHkmT",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "7f10668d-a976-42a7-a053-089b21841c91"
       },
-      "outputs": [],
-      "source": []
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Mounted at /content/drive\n",
+            "Loaded 33,566 rows\n"
+          ]
+        }
+      ],
+      "source": [
+        "from google.colab import drive\n",
+        "drive.mount('/content/drive')\n",
+        "\n",
+        "!pip install -q geopandas pyarrow openpyxl\n",
+        "\n",
+        "import pandas as pd\n",
+        "import numpy as np\n",
+        "from pathlib import Path\n",
+        "import matplotlib.pyplot as plt\n",
+        "\n",
+        "DRIVE_ROOT = Path(\"/content/drive/MyDrive/queue-viability\")\n",
+        "RAW = DRIVE_ROOT / \"data\" / \"raw\"\n",
+        "INTERIM = DRIVE_ROOT / \"data\" / \"interim\"\n",
+        "PROCESSED = DRIVE_ROOT / \"data\" / \"processed\"\n",
+        "FIGURES = DRIVE_ROOT / \"reports\" / \"figures\"\n",
+        "\n",
+        "gen = pd.read_parquet(INTERIM / \"generation_queue.parquet\")\n",
+        "print(f\"Loaded {len(gen):,} rows\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Y label: 1 if operational, 0 if withdrawn\n",
+        "gen['y'] = np.where(\n",
+        "    gen['q_status'] == 'operational', 1,\n",
+        "    np.where(gen['q_status'] == 'withdrawn', 0, np.nan)\n",
+        ")\n",
+        "\n",
+        "# Mark training-eligible rows\n",
+        "gen['is_trainable'] = (\n",
+        "    gen['y'].notna() &\n",
+        "    (gen['q_year'] <= 2019)\n",
+        ")\n",
+        "\n",
+        "# Mark scoring-eligible rows (the live regulator-facing output)\n",
+        "gen['is_scoring'] = gen['q_status'].isin(['active', 'suspended'])\n",
+        "\n",
+        "print(f\"Trainable: {gen['is_trainable'].sum():,}\")\n",
+        "print(f\"Scoring-eligible: {gen['is_scoring'].sum():,}\")"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "B2G-38pGIQ5h",
+        "outputId": "a3b59f36-3098-451c-975b-7cdd496e1489"
+      },
+      "execution_count": 2,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Trainable: 15,662\n",
+            "Scoring-eligible: 10,976\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Total capacity\n",
+        "gen['mw_total'] = gen[['mw1', 'mw2', 'mw3']].sum(axis=1, min_count=1)\n",
+        "\n",
+        "# Bucket rare fuel types — anything below 200 trainable rows becomes \"Other_combined\"\n",
+        "fuel_counts = gen.loc[gen['is_trainable'], 'type_clean'].value_counts()\n",
+        "common_fuels = fuel_counts[fuel_counts >= 200].index\n",
+        "gen['fuel_bucketed'] = gen['type_clean'].where(\n",
+        "    gen['type_clean'].isin(common_fuels),\n",
+        "    'Other_combined'\n",
+        ")\n",
+        "\n",
+        "# Capacity log-transform (long tail — model will benefit)\n",
+        "# Replace any mw_total values <= -1 with NaN before applying log1p to avoid RuntimeWarning\n",
+        "gen['mw_total'] = gen['mw_total'].mask(gen['mw_total'] <= -1)\n",
+        "gen['log_mw'] = np.log1p(gen['mw_total'])\n",
+        "\n",
+        "# Service type (ERIS/NRIS) — already clean\n",
+        "# Region — already clean\n",
+        "# Project type (Generation vs Surplus) — already clean\n",
+        "\n",
+        "print(\"Direct features ready:\")\n",
+        "print(gen[['fuel_bucketed', 'region', 'service', 'project_type']].nunique())"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "oYnuBJROIuQi",
+        "outputId": "4e130f0b-3645-4179-bbad-cbbf5df1334b"
+      },
+      "execution_count": 4,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Direct features ready:\n",
+            "fuel_bucketed    9\n",
+            "region           9\n",
+            "service          4\n",
+            "project_type     2\n",
+            "dtype: int64\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "gen.IA_status_clean.unique()"
+      ],
+      "metadata": {
+        "id": "8nwPxfFvJyIF",
+        "outputId": "9762f560-9fda-43de-b19a-e40bd9b037f1",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 5,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "array(['Withdrawn', 'Operational', 'In Progress (unknown study)',\n",
+              "       'IA Executed', 'Construction', 'Suspended', 'Cluster Study',\n",
+              "       'System Impact Study', 'Facility Study', None, 'IA Pending',\n",
+              "       'Feasibility Study', 'Not Started', 'Combined'], dtype=object)"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 5
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Map IA_status_clean to ordinal phase\n",
+        "# Order reflects how far along a project is in the interconnection process\n",
+        "\n",
+        "phase_order = {\n",
+        "    'Not Started': 0,\n",
+        "    'Cluster Study': 1,\n",
+        "    'Feasibility Study': 2,\n",
+        "    'System Impact Study': 3,\n",
+        "    'Facility Study': 4,\n",
+        "    'IA Pending': 5,\n",
+        "    'IA Executed': 6,\n",
+        "    'Construction': 7,\n",
+        "    'Operational': 6,  # imputed: operational projects passed through IA Executed\n",
+        "    'Withdrawn': np.nan,\n",
+        "    'Suspended': np.nan,\n",
+        "    'In Progress (unknown study)': np.nan,\n",
+        "    'Combined': np.nan,\n",
+        "}\n",
+        "\n",
+        "\n",
+        "gen['phase_ordinal'] = gen['IA_status_clean'].map(phase_order)\n",
+        "\n",
+        "# Most rows where status is operational/withdrawn should have a phase_ordinal == NaN\n",
+        "# (because their IA_status_clean is itself \"Operational\"/\"Withdrawn\")\n",
+        "# That's a problem — you'd lose your training signal\n",
+        "print(\"Trainable rows with phase_ordinal:\")\n",
+        "print(gen.loc[gen['is_trainable'], 'phase_ordinal'].describe())"
+      ],
+      "metadata": {
+        "id": "F9s0EtuxJ98k",
+        "outputId": "0bd650af-f2a4-4cb7-e8ba-2492f602f5cf",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 6,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Trainable rows with phase_ordinal:\n",
+            "count    8437.000000\n",
+            "mean        4.091028\n",
+            "std         1.647235\n",
+            "min         0.000000\n",
+            "25%         3.000000\n",
+            "50%         3.000000\n",
+            "75%         6.000000\n",
+            "max         6.000000\n",
+            "Name: phase_ordinal, dtype: float64\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "pd.crosstab(gen['q_status'], gen['IA_status_clean'])"
+      ],
+      "metadata": {
+        "id": "hZIOUNO5MWZu",
+        "outputId": "8a078a81-6ca8-4f40-9629-1c1d7f3abe54",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 310
+        }
+      },
+      "execution_count": 7,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "IA_status_clean  Cluster Study  Combined  Construction  Facility Study  \\\n",
+              "q_status                                                                 \n",
+              "active                    1030         0            45            1646   \n",
+              "operational                  8         1             0             167   \n",
+              "suspended                    0         0             0              26   \n",
+              "unknown                      0         0             0               1   \n",
+              "withdrawn                  552         0             0             794   \n",
+              "\n",
+              "IA_status_clean  Feasibility Study  IA Executed  IA Pending  \\\n",
+              "q_status                                                      \n",
+              "active                          78         1884          95   \n",
+              "operational                     17         1751          34   \n",
+              "suspended                        1          153           0   \n",
+              "unknown                          0            0           0   \n",
+              "withdrawn                     1631          996           2   \n",
+              "\n",
+              "IA_status_clean  In Progress (unknown study)  Not Started  Operational  \\\n",
+              "q_status                                                                 \n",
+              "active                                  2555          261           14   \n",
+              "operational                               19            0         1021   \n",
+              "suspended                                  4            0            0   \n",
+              "unknown                                    0            0            0   \n",
+              "withdrawn                               2083           15            0   \n",
+              "\n",
+              "IA_status_clean  Suspended  System Impact Study  Withdrawn  \n",
+              "q_status                                                    \n",
+              "active                 105                 1049          1  \n",
+              "operational              4                  290          0  \n",
+              "suspended              215                   19          0  \n",
+              "unknown                  0                    0          0  \n",
+              "withdrawn               16                 3193       6334  "
+            ],
+            "text/html": [
+              "\n",
+              "  <div id=\"df-a1fe7128-67d8-4a41-9a56-77eb02847a59\" class=\"colab-df-container\">\n",
+              "    <div>\n",
+              "<style scoped>\n",
+              "    .dataframe tbody tr th:only-of-type {\n",
+              "        vertical-align: middle;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe tbody tr th {\n",
+              "        vertical-align: top;\n",
+              "    }\n",
+              "\n",
+              "    .dataframe thead th {\n",
+              "        text-align: right;\n",
+              "    }\n",
+              "</style>\n",
+              "<table border=\"1\" class=\"dataframe\">\n",
+              "  <thead>\n",
+              "    <tr style=\"text-align: right;\">\n",
+              "      <th>IA_status_clean</th>\n",
+              "      <th>Cluster Study</th>\n",
+              "      <th>Combined</th>\n",
+              "      <th>Construction</th>\n",
+              "      <th>Facility Study</th>\n",
+              "      <th>Feasibility Study</th>\n",
+              "      <th>IA Executed</th>\n",
+              "      <th>IA Pending</th>\n",
+              "      <th>In Progress (unknown study)</th>\n",
+              "      <th>Not Started</th>\n",
+              "      <th>Operational</th>\n",
+              "      <th>Suspended</th>\n",
+              "      <th>System Impact Study</th>\n",
+              "      <th>Withdrawn</th>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>q_status</th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "      <th></th>\n",
+              "    </tr>\n",
+              "  </thead>\n",
+              "  <tbody>\n",
+              "    <tr>\n",
+              "      <th>active</th>\n",
+              "      <td>1030</td>\n",
+              "      <td>0</td>\n",
+              "      <td>45</td>\n",
+              "      <td>1646</td>\n",
+              "      <td>78</td>\n",
+              "      <td>1884</td>\n",
+              "      <td>95</td>\n",
+              "      <td>2555</td>\n",
+              "      <td>261</td>\n",
+              "      <td>14</td>\n",
+              "      <td>105</td>\n",
+              "      <td>1049</td>\n",
+              "      <td>1</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>operational</th>\n",
+              "      <td>8</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>167</td>\n",
+              "      <td>17</td>\n",
+              "      <td>1751</td>\n",
+              "      <td>34</td>\n",
+              "      <td>19</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1021</td>\n",
+              "      <td>4</td>\n",
+              "      <td>290</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>suspended</th>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>26</td>\n",
+              "      <td>1</td>\n",
+              "      <td>153</td>\n",
+              "      <td>0</td>\n",
+              "      <td>4</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>215</td>\n",
+              "      <td>19</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>unknown</th>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>1</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "    </tr>\n",
+              "    <tr>\n",
+              "      <th>withdrawn</th>\n",
+              "      <td>552</td>\n",
+              "      <td>0</td>\n",
+              "      <td>0</td>\n",
+              "      <td>794</td>\n",
+              "      <td>1631</td>\n",
+              "      <td>996</td>\n",
+              "      <td>2</td>\n",
+              "      <td>2083</td>\n",
+              "      <td>15</td>\n",
+              "      <td>0</td>\n",
+              "      <td>16</td>\n",
+              "      <td>3193</td>\n",
+              "      <td>6334</td>\n",
+              "    </tr>\n",
+              "  </tbody>\n",
+              "</table>\n",
+              "</div>\n",
+              "    <div class=\"colab-df-buttons\">\n",
+              "\n",
+              "  <div class=\"colab-df-container\">\n",
+              "    <button class=\"colab-df-convert\" onclick=\"convertToInteractive('df-a1fe7128-67d8-4a41-9a56-77eb02847a59')\"\n",
+              "            title=\"Convert this dataframe to an interactive table.\"\n",
+              "            style=\"display:none;\">\n",
+              "\n",
+              "  <svg xmlns=\"http://www.w3.org/2000/svg\" height=\"24px\" viewBox=\"0 -960 960 960\">\n",
+              "    <path d=\"M120-120v-720h720v720H120Zm60-500h600v-160H180v160Zm220 220h160v-160H400v160Zm0 220h160v-160H400v160ZM180-400h160v-160H180v160Zm440 0h160v-160H620v160ZM180-180h160v-160H180v160Zm440 0h160v-160H620v160Z\"/>\n",
+              "  </svg>\n",
+              "    </button>\n",
+              "\n",
+              "  <style>\n",
+              "    .colab-df-container {\n",
+              "      display:flex;\n",
+              "      gap: 12px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert {\n",
+              "      background-color: #E8F0FE;\n",
+              "      border: none;\n",
+              "      border-radius: 50%;\n",
+              "      cursor: pointer;\n",
+              "      display: none;\n",
+              "      fill: #1967D2;\n",
+              "      height: 32px;\n",
+              "      padding: 0 0 0 0;\n",
+              "      width: 32px;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-convert:hover {\n",
+              "      background-color: #E2EBFA;\n",
+              "      box-shadow: 0px 1px 2px rgba(60, 64, 67, 0.3), 0px 1px 3px 1px rgba(60, 64, 67, 0.15);\n",
+              "      fill: #174EA6;\n",
+              "    }\n",
+              "\n",
+              "    .colab-df-buttons div {\n",
+              "      margin-bottom: 4px;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert {\n",
+              "      background-color: #3B4455;\n",
+              "      fill: #D2E3FC;\n",
+              "    }\n",
+              "\n",
+              "    [theme=dark] .colab-df-convert:hover {\n",
+              "      background-color: #434B5C;\n",
+              "      box-shadow: 0px 1px 3px 1px rgba(0, 0, 0, 0.15);\n",
+              "      filter: drop-shadow(0px 1px 2px rgba(0, 0, 0, 0.3));\n",
+              "      fill: #FFFFFF;\n",
+              "    }\n",
+              "  </style>\n",
+              "\n",
+              "    <script>\n",
+              "      const buttonEl =\n",
+              "        document.querySelector('#df-a1fe7128-67d8-4a41-9a56-77eb02847a59 button.colab-df-convert');\n",
+              "      buttonEl.style.display =\n",
+              "        google.colab.kernel.accessAllowed ? 'block' : 'none';\n",
+              "\n",
+              "      async function convertToInteractive(key) {\n",
+              "        const element = document.querySelector('#df-a1fe7128-67d8-4a41-9a56-77eb02847a59');\n",
+              "        const dataTable =\n",
+              "          await google.colab.kernel.invokeFunction('convertToInteractive',\n",
+              "                                                    [key], {});\n",
+              "        if (!dataTable) return;\n",
+              "\n",
+              "        const docLinkHtml = 'Like what you see? Visit the ' +\n",
+              "          '<a target=\"_blank\" href=https://colab.research.google.com/notebooks/data_table.ipynb>data table notebook</a>'\n",
+              "          + ' to learn more about interactive tables.';\n",
+              "        element.innerHTML = '';\n",
+              "        dataTable['output_type'] = 'display_data';\n",
+              "        await google.colab.output.renderOutput(dataTable, element);\n",
+              "        const docLink = document.createElement('div');\n",
+              "        docLink.innerHTML = docLinkHtml;\n",
+              "        element.appendChild(docLink);\n",
+              "      }\n",
+              "    </script>\n",
+              "  </div>\n",
+              "\n",
+              "\n",
+              "    </div>\n",
+              "  </div>\n"
+            ],
+            "application/vnd.google.colaboratory.intrinsic+json": {
+              "type": "dataframe",
+              "summary": "{\n  \"name\": \"pd\",\n  \"rows\": 5,\n  \"fields\": [\n    {\n      \"column\": \"q_status\",\n      \"properties\": {\n        \"dtype\": \"string\",\n        \"num_unique_values\": 5,\n        \"samples\": [\n          \"operational\",\n          \"withdrawn\",\n          \"suspended\"\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Cluster Study\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 463,\n        \"min\": 0,\n        \"max\": 1030,\n        \"num_unique_values\": 4,\n        \"samples\": [\n          8,\n          552,\n          1030\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Combined\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 0,\n        \"min\": 0,\n        \"max\": 1,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Construction\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 20,\n        \"min\": 0,\n        \"max\": 45,\n        \"num_unique_values\": 2,\n        \"samples\": [\n          0,\n          45\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Facility Study\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 703,\n        \"min\": 1,\n        \"max\": 1646,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          167,\n          794\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Feasibility Study\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 719,\n        \"min\": 0,\n        \"max\": 1631,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          17,\n          1631\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"IA Executed\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 873,\n        \"min\": 0,\n        \"max\": 1884,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          1751,\n          996\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"IA Pending\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 41,\n        \"min\": 0,\n        \"max\": 95,\n        \"num_unique_values\": 4,\n        \"samples\": [\n          34,\n          2\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"In Progress (unknown study)\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 1276,\n        \"min\": 0,\n        \"max\": 2555,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          19,\n          2083\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Not Started\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 115,\n        \"min\": 0,\n        \"max\": 261,\n        \"num_unique_values\": 3,\n        \"samples\": [\n          261,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Operational\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 455,\n        \"min\": 0,\n        \"max\": 1021,\n        \"num_unique_values\": 3,\n        \"samples\": [\n          14,\n          1021\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Suspended\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 92,\n        \"min\": 0,\n        \"max\": 215,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          4,\n          16\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"System Impact Study\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 1345,\n        \"min\": 0,\n        \"max\": 3193,\n        \"num_unique_values\": 5,\n        \"samples\": [\n          290,\n          3193\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    },\n    {\n      \"column\": \"Withdrawn\",\n      \"properties\": {\n        \"dtype\": \"number\",\n        \"std\": 2832,\n        \"min\": 0,\n        \"max\": 6334,\n        \"num_unique_values\": 3,\n        \"samples\": [\n          1,\n          0\n        ],\n        \"semantic_type\": \"\",\n        \"description\": \"\"\n      }\n    }\n  ]\n}"
+            }
+          },
+          "metadata": {},
+          "execution_count": 7
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Queue vintage — when did this project enter the queue?\n",
+        "gen['q_year'] = pd.to_numeric(gen['q_year'], errors='coerce')\n",
+        "\n",
+        "# Time between request and proposed online date (developer's stated timeline)\n",
+        "# Both q_date and prop_date are known at request time — no leakage\n",
+        "gen['q_date'] = pd.to_datetime(gen['q_date'], errors='coerce')\n",
+        "gen['prop_date'] = pd.to_datetime(gen['prop_date'], errors='coerce')\n",
+        "\n",
+        "gen['proposed_dev_years'] = (\n",
+        "    (gen['prop_date'] - gen['q_date']).dt.days / 365.25\n",
+        ").clip(lower=0, upper=15)  # cap unreasonable values\n",
+        "\n",
+        "# Don't use on_date or wd_date — those are outcomes"
+      ],
+      "metadata": {
+        "id": "aTGbXpDpNEOp"
+      },
+      "execution_count": 9,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Build a per-developer historical completion rate, time-aware\n",
+        "gen_sorted = gen.sort_values('q_date').copy()\n",
+        "\n",
+        "# For each row, look at all that developer's prior projects with known outcomes\n",
+        "# (resolved before this project's q_date)\n",
+        "def compute_developer_history(df):\n",
+        "    \"\"\"For each row, compute the developer's completion rate among\n",
+        "    projects that resolved before this row's queue date.\"\"\"\n",
+        "    df = df.sort_values('q_date').copy()\n",
+        "    df['dev_prior_n'] = 0\n",
+        "    df['dev_prior_completion_rate'] = np.nan\n",
+        "\n",
+        "    for dev, group in df.groupby('developer'):\n",
+        "        if pd.isna(dev) or dev == 'nan':\n",
+        "            continue\n",
+        "        group = group.sort_values('q_date')\n",
+        "        for idx, row in group.iterrows():\n",
+        "            # Prior projects = same developer, q_date earlier than this one,\n",
+        "            # and outcome (op/wd) is known\n",
+        "            prior = group[\n",
+        "                (group['q_date'] < row['q_date']) &\n",
+        "                (group['y'].notna())\n",
+        "            ]\n",
+        "            n = len(prior)\n",
+        "            df.at[idx, 'dev_prior_n'] = n\n",
+        "            if n >= 3:  # require at least 3 prior projects for a meaningful rate\n",
+        "                df.at[idx, 'dev_prior_completion_rate'] = prior['y'].mean()\n",
+        "\n",
+        "    return df\n",
+        "\n",
+        "# Warning: this is O(N^2) within each developer group.\n",
+        "# For 33K rows it should run in a few minutes. If too slow, vectorize later.\n",
+        "gen = compute_developer_history(gen)\n",
+        "\n",
+        "print(f\"Rows with usable dev history (n>=3 prior): \"\n",
+        "      f\"{gen['dev_prior_completion_rate'].notna().sum():,}\")\n",
+        "print(f\"Mean completion rate among developers w/ history: \"\n",
+        "      f\"{gen['dev_prior_completion_rate'].mean():.2%}\")"
+      ],
+      "metadata": {
+        "id": "CA0HjWE-NM5p",
+        "outputId": "bd24bf39-a713-407a-a6d9-47d0ad6859a7",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 10,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Rows with usable dev history (n>=3 prior): 1,530\n",
+            "Mean completion rate among developers w/ history: 28.87%\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Distribution of dev_prior_n among rows that have it\n",
+        "print(\"Dev prior project counts (among rows with n>=3):\")\n",
+        "print(gen.loc[gen['dev_prior_n'] >= 3, 'dev_prior_n'].describe())\n",
+        "\n",
+        "# Top developers by row count\n",
+        "print(\"\\nTop 15 developers by trainable row count:\")\n",
+        "trainable = gen[gen['is_trainable']]\n",
+        "print(trainable['developer'].value_counts().head(15))\n",
+        "\n",
+        "# Completion rate by top developers\n",
+        "top_devs = trainable['developer'].value_counts().head(15).index\n",
+        "completion_by_dev = (\n",
+        "    trainable[trainable['developer'].isin(top_devs)]\n",
+        "    .groupby('developer')['y']\n",
+        "    .agg(['mean', 'count'])\n",
+        "    .sort_values('count', ascending=False)\n",
+        ")\n",
+        "print(\"\\nCompletion rate among top 15 developers:\")\n",
+        "print(completion_by_dev)"
+      ],
+      "metadata": {
+        "id": "XYivax3qOGdk",
+        "outputId": "6abd2882-c614-49f3-c0cb-64d19083a087",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 11,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Dev prior project counts (among rows with n>=3):\n",
+            "count    1530.000000\n",
+            "mean       58.656209\n",
+            "std        58.652512\n",
+            "min         3.000000\n",
+            "25%         7.000000\n",
+            "50%        33.000000\n",
+            "75%       103.000000\n",
+            "max       214.000000\n",
+            "Name: dev_prior_n, dtype: float64\n",
+            "\n",
+            "Top 15 developers by trainable row count:\n",
+            "developer\n",
+            "Masked                                 173\n",
+            "FPL                                     93\n",
+            "Duke Energy Florida, LLC                89\n",
+            "PacifiCorp Commercial & Trading         39\n",
+            "Duke Energy Progress, LLC               30\n",
+            "PacifiCorp Energy                       23\n",
+            "SCPSA                                   22\n",
+            "EDF Renewables Development, Inc.        20\n",
+            "Nextera                                 15\n",
+            "sPower Development Company, LLC         15\n",
+            "Cypress Creek Renewables                14\n",
+            "Noble Environmental Power, LLC          12\n",
+            "Basin Electric                          12\n",
+            "Black Hills Electric Generation LLC     12\n",
+            "Eon                                     11\n",
+            "Name: count, dtype: int64\n",
+            "\n",
+            "Completion rate among top 15 developers:\n",
+            "                                         mean  count\n",
+            "developer                                           \n",
+            "Masked                               0.000000    173\n",
+            "FPL                                  0.784946     93\n",
+            "Duke Energy Florida, LLC             0.224719     89\n",
+            "PacifiCorp Commercial & Trading      0.333333     39\n",
+            "Duke Energy Progress, LLC            0.300000     30\n",
+            "PacifiCorp Energy                    0.565217     23\n",
+            "SCPSA                                0.909091     22\n",
+            "EDF Renewables Development, Inc.     0.050000     20\n",
+            "Nextera                              0.333333     15\n",
+            "sPower Development Company, LLC      0.000000     15\n",
+            "Cypress Creek Renewables             0.142857     14\n",
+            "Basin Electric                       1.000000     12\n",
+            "Black Hills Electric Generation LLC  0.666667     12\n",
+            "Noble Environmental Power, LLC       0.500000     12\n",
+            "Eon                                  0.454545     11\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Replace \"Masked\" with NaN before computing developer history\n",
+        "gen['developer'] = gen['developer'].replace('Masked', np.nan)\n",
+        "# Rerun compute_developer_history\n",
+        "gen = compute_developer_history(gen)\n",
+        "\n",
+        "# Recheck\n",
+        "print(f\"Rows with usable dev history (n>=3 prior): \"\n",
+        "      f\"{gen['dev_prior_completion_rate'].notna().sum():,}\")\n",
+        "print(f\"Mean completion rate among developers w/ history: \"\n",
+        "      f\"{gen['dev_prior_completion_rate'].mean():.2%}\")"
+      ],
+      "metadata": {
+        "id": "8CHwvwgBOzl9",
+        "outputId": "9b228733-5e50-48ad-d48c-a0a2a60988b9",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 12,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Rows with usable dev history (n>=3 prior): 1,300\n",
+            "Mean completion rate among developers w/ history: 33.98%\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "trainable = gen[gen['is_trainable']]\n",
+        "print(\"Top 15 developers (should not include 'Masked'):\")\n",
+        "print(trainable['developer'].value_counts().head(15))"
+      ],
+      "metadata": {
+        "id": "ihPBkNWBO47M",
+        "outputId": "9f973f39-270b-4efb-ab07-846915ddc05e",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 13,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Top 15 developers (should not include 'Masked'):\n",
+            "developer\n",
+            "FPL                                    93\n",
+            "Duke Energy Florida, LLC               89\n",
+            "PacifiCorp Commercial & Trading        39\n",
+            "Duke Energy Progress, LLC              30\n",
+            "PacifiCorp Energy                      23\n",
+            "SCPSA                                  22\n",
+            "EDF Renewables Development, Inc.       20\n",
+            "sPower Development Company, LLC        15\n",
+            "Nextera                                15\n",
+            "Cypress Creek Renewables               14\n",
+            "Black Hills Electric Generation LLC    12\n",
+            "Noble Environmental Power, LLC         12\n",
+            "Basin Electric                         12\n",
+            "Eon                                    11\n",
+            "OneEnergy Development, LLC             10\n",
+            "Name: count, dtype: int64\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Cluster size — how many projects are in the same cluster?\n",
+        "gen['cluster_size'] = gen.groupby('cluster')['cluster'].transform('count')\n",
+        "\n",
+        "# Queue activity at time of entry — how many other projects entered the same year/region?\n",
+        "gen['q_year_region_volume'] = (\n",
+        "    gen.groupby(['q_year', 'region'])['q_id'].transform('count')\n",
+        ")"
+      ],
+      "metadata": {
+        "id": "PLu7CCuMPcXK"
+      },
+      "execution_count": 14,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Trim to features + label + identifiers\n",
+        "feature_cols = [\n",
+        "    'q_id', 'q_status', 'q_date', 'q_year', 'region', 'state', 'county',\n",
+        "    'fips_codes', 'utility', 'developer', 'fuel_bucketed', 'service',\n",
+        "    'project_type', 'mw_total', 'log_mw', 'proposed_dev_years',\n",
+        "    'dev_prior_n', 'dev_prior_completion_rate',\n",
+        "    'cluster_size', 'q_year_region_volume',\n",
+        "    'y', 'is_trainable', 'is_scoring'\n",
+        "]\n",
+        "\n",
+        "features_v1 = gen[feature_cols].copy()\n",
+        "\n",
+        "# Cast q_id to string in case the parquet issue resurfaces\n",
+        "features_v1['q_id'] = features_v1['q_id'].astype(str)\n",
+        "\n",
+        "features_v1.to_parquet(INTERIM / \"features_v1.parquet\", index=False)\n",
+        "print(f\"Saved {len(features_v1):,} rows × {len(feature_cols)} cols\")"
+      ],
+      "metadata": {
+        "id": "dz1dH6DJPrj7",
+        "outputId": "a0383d64-08e5-47d2-dddc-9ff79bcd8835",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "execution_count": 18,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Saved 33,566 rows × 23 cols\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "-XLVm9GKP9Uh"
+      },
+      "execution_count": 15,
+      "outputs": []
     }
   ]
 }
