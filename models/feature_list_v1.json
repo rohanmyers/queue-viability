@@ -1,0 +1,38 @@
+{
+  "cat_features": [
+    "fuel_bucketed",
+    "region",
+    "service",
+    "project_type",
+    "capacity_class"
+  ],
+  "num_features": [
+    "log_mw",
+    "q_year",
+    "dev_prior_n",
+    "dev_prior_completion_rate",
+    "has_dev_history",
+    "cluster_size",
+    "q_year_region_volume",
+    "industrial_price_cents_kwh"
+  ],
+  "all_features": [
+    "fuel_bucketed",
+    "region",
+    "service",
+    "project_type",
+    "capacity_class",
+    "log_mw",
+    "q_year",
+    "dev_prior_n",
+    "dev_prior_completion_rate",
+    "has_dev_history",
+    "cluster_size",
+    "q_year_region_volume",
+    "industrial_price_cents_kwh"
+  ],
+  "train_size": 12100,
+  "test_size": 3178,
+  "class_balance_train": 0.21702479338842975,
+  "scale_pos_weight": 3.6077684691546077
+}
