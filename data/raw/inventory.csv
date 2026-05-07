@@ -1,0 +1,7 @@
+dataset,filename,source_url,downloaded_on,purpose,file_exists,size_mb
+LBNL Queued Up,lbnl_queued_up_2025.xlsx,https://emp.lbl.gov/queues,2026-04-24,Historical and active interconnection queue — primary training data,True,14.07
+HIFLD Electric Substations,hifld_substations.geojson,https://catalog.data.gov/dataset/electric-substations,2026-04-24,Feature: distance to nearest 230+ kV substation,True,0.07
+HIFLD Transmission Lines,hifld_transmission_lines.geojson,https://www.datalumos.org/datalumos/project/240591/version/V1/view,2026-04-24,Feature: transmission capacity proxies (Day 3+),True,159.02
+EIA Form 860 (2023),eia860_2024.zip,https://www.eia.gov/electricity/data/eia860/,2026-04-24,Label verification: which queued projects are now operational,True,22.1
+EIA Form 861 (2023),eia861_2024.zip,https://www.eia.gov/electricity/data/eia861/,2026-04-24,Feature: utility-level retail electricity price,True,4.57
+datacenter.fyi,TBD,https://www.interconnection.fyi/data-center,pending,Label confirmation for data-center-specific requests — address Day 3,False,
