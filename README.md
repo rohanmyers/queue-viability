@@ -12,7 +12,7 @@ Every power plant seeking to connect to the U.S. electrical grid must join an in
 
 This phantom capacity problem has real consequences. Utilities plan generation and transmission infrastructure around announced queue projects. When those projects evaporate, ratepayers are left holding the cost of infrastructure built for demand that never materialized. At the same time, the rapid growth of AI data centers is driving unprecedented electricity load growth, making it more critical than ever to distinguish real supply additions from speculative filings.
 
-Regulators at FERC, state public utility commissions, and ISO planning teams currently have no standardized, evidence-based method to assess which queued projects are credible. This project attempts to creat one.
+Regulators at FERC, state public utility commissions, and ISO planning teams currently have no standardized, evidence-based method to assess which queued projects are credible. This project attempts to create one.
 
 ---
 
