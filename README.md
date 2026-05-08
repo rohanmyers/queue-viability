@@ -1,9 +1,5 @@
 # Generation Interconnection Queue Viability
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/rohanmyers/queue-viability/blob/main/notebooks/01_data_inventory.ipynb)
-![Python](https://img.shields.io/badge/Python-3.10+-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-
 A machine learning tool that predicts whether a proposed U.S. power plant will actually get built by scoring every active project in the national interconnection queue with a calibrated probability and regional confidence rating.
 
 **Headline finding: Of 1,703 GW of announced generation capacity outside Texas, the model predicts 92% will never reach commercial operation.**
