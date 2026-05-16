@@ -25,12 +25,16 @@ formally withdraw, so their "withdrawn" labels are unreliable — a project stil
 in study phase is not the same as a project that failed.
 
 ## Training cutoff decision
-**Use q_year <= 2019 for training.** Post-2019 requests held out for scoring only.
+**Initial plan:** Use q_year <= 2019 for training (15,662 rows, 20.8% positive).
 
-- Clean training set (2010-2019): 15,662 rows
-  - Operational (Y=1): 3,265
-  - Withdrawn (Y=0): 12,397
-  - Class balance: 20.8% positive
+**Revised decision (final):** Use q_year 2010–2017 for training; hold out 2018–2019 as a
+temporal test set. Post-2019 requests held out for scoring only.
+
+- Final training set (2010-2017): 12,100 rows
+  - Operational (Y=1): 2,628
+  - Withdrawn (Y=0): 9,472
+  - Class balance: 21.7% positive
+- Final test set (2018-2019): 3,178 rows, 13.4% positive rate
 
 ## Regional coverage
 
