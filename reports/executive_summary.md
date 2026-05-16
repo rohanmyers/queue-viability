@@ -16,7 +16,7 @@ When utilities overbuild infrastructure for phantom queue projects, residential 
 
 ## What Was Built
 
-A machine learning model that assigns every active generation interconnection request a **viability score** or a calibrated probability from 0 to 1 representing the likelihood that the project will reach commercial operation. The model was trained on 22,587 historical queue outcomes (2010–2017), evaluated on a held-out 2018–2019 test cohort, and then applied to score all 10,430 currently active and suspended projects in the national queue.
+A machine learning model that assigns every active generation interconnection request a **viability score** or a calibrated probability from 0 to 1 representing the likelihood that the project will reach commercial operation. The model was trained on 12,100 historical queue outcomes (2010–2017 training cohort), evaluated on a held-out 2018–2019 test cohort of 3,178 projects, and then applied to score all 10,430 currently active and suspended projects in the national queue.
 
 The model uses 13 features available for every queued project: fuel type (Solar, Wind, Battery, Gas, etc.), ISO/RTO region, proposed capacity in MW, service type (ERIS/NRIS), queue year, queue congestion at time of entry, developer track record (historical completion rate and number of prior projects), and state-level industrial electricity price. No proprietary or non-public data is required.
 
