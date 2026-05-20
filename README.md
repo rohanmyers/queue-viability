@@ -181,10 +181,10 @@ See `models/model_card_v1.md` for full documentation. Key points:
 ## References
 
 - Rand et al. (2025). *Queued Up: 2025 Edition.* Lawrence Berkeley National Laboratory. https://emp.lbl.gov/queues
-- Gorman et al. (2024). Grid connection barriers to renewable energy deployment in the United States. *Joule.* https://doi.org/10.1016/j.joule.2024.101791
-- FERC Order No. 2023. Generator Interconnection Process Reform. https://www.ferc.gov/explainer-interconnection-final-rule-2023-A
-- MIT CEEPR (2023). FERC Order 2023: Will It Make a Difference? https://ceepr.mit.edu/wp-content/uploads/2023/12/MIT-CEEPR-RC-2023-06.pdf
-- Grid Strategies (2025). National Load Growth Report. https://gridstrategiesllc.com
+- Gorman et al. (2024). Grid connection barriers to renewable energy deployment in the United States. *Joule.* https://www.sciencedirect.com/science/article/pii/S2542435124005038
+- Explainer on the Interconnection Final Rule Requests for Rehearing and Clarification (FERC Order No. 2023-A) https://www.ferc.gov/explainer-interconnection-final-rule-2023-A
+- MIT CEEPR (2023). FERC Order 2023: Will it Unplug the Bottleneck? https://ceepr.mit.edu/wp-content/uploads/2023/12/MIT-CEEPR-RC-2023-06.pdf
+- Grid Strategies (2025). Power Demand Forecasts Revised Up for Third Year Running, Led by Data Centers. https://gridstrategiesllc.com/wp-content/uploads/Grid-Strategies-National-Load-Growth-Report-2025.pdf
 
 ---
 
